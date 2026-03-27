@@ -9,16 +9,17 @@ description: Generate daily morning briefings with weather, traffic limits, and 
 
 ## Features
 
-- **稳定的数据获取** - 使用结构化脚本获取天气、限行、新闻，减少随机性
+- **稳定的数据获取** - 使用结构化脚本获取天气、限行，配合搜索获取新闻，减少随机性
+- **新闻精选规则** - 共20条新闻，分类为：国际新闻5条、科技新闻5条、互联网5条、热点事件5条，自动过滤重复
 - **本地缓存** - 30分钟数据缓存，避免重复请求
 - **容错设计** - API 失败时提供备用数据
 - **多种输出格式** - 支持文本、JSON、简化版等多种格式
-- **全自动化** - 新闻抓取脚本化，无需 AI 手动抓取
+- **全自动化** - 新闻由搜索+AI整理，无需手动筛选
 
 ## Quick Start
 
 ```bash
-# 生成今日晨报（完整版，含新闻）
+# 生成今日晨报（完整版，含天气+限行，新闻由AI搜索整理）
 node scripts/generate-briefing.mjs
 
 # 生成次日晨报
@@ -33,6 +34,21 @@ node scripts/generate-briefing.mjs --no-news
 # JSON 格式输出
 node scripts/generate-briefing.mjs --json
 ```
+
+**完整晨报生成流程（推荐）**：
+
+1. 执行脚本获取天气和限行：
+```bash
+node ~/.openclaw/skills/daily-briefing/scripts/generate-briefing.mjs --no-news
+```
+
+2. AI 使用 kimi_search 工具搜索新闻：
+   - 搜索关键词：`国际新闻 2026年3月27日`（5条）
+   - 搜索关键词：`科技新闻 AI 2026年3月27日`（5条）
+   - 搜索关键词：`互联网 产业 2026年3月27日`（5条）
+   - 搜索关键词：`今日热点 社会 2026年3月27日`（5条）
+
+3. AI 按规则整理新闻并生成完整简报
 
 ## API Usage
 
@@ -56,7 +72,23 @@ const data = await generateBriefingData({ dayOffset: 0 });
 |---------|------|---------|------|
 | 天气 | wttr.in API | 实时 | curl |
 | 限行 | 本地规则配置 | 按周期更新 | 代码计算 |
-| 新闻 | 网易新闻、新浪新闻、搜狐新闻 | 实时 | curl + cheerio |
+| 新闻 | Kimi Search 实时搜索 | 实时 | 搜索+AI整理 |
+
+## 新闻精选规则
+
+简报新闻共 **20条**，按以下分类：
+
+| 分类 | 条数 | 内容范围 |
+|------|------|---------|
+| 🌍 国际新闻 | 5条 | 国际政治、地缘冲突、全球经济 |
+| 💻 科技新闻 | 5条 | AI、航天、芯片、科研突破 |
+| 🌐 互联网/产业 | 5条 | 互联网大厂、AI应用、产业动态 |
+| 🔥 热点事件 | 5条 | 国内时事、体育、社会热点 |
+
+**过滤规则**：
+- 自动过滤重复报道（同一事件只保留最权威来源）
+- 过滤广告/推广内容
+- 过滤与已有新闻高度相似的内容
 
 ## 北京限行规则（2025.12.29-2026.03.29）
 
@@ -80,12 +112,12 @@ const data = await generateBriefingData({ dayOffset: 0 });
   "name": "每日晨报-晨间",
   "schedule": {
     "kind": "cron",
-    "expr": "0 56 6 * * *",
+    "expr": "0 15 7 * * *",
     "tz": "Asia/Shanghai"
   },
   "payload": {
     "kind": "agentTurn",
-    "message": "生成每日晨报：\n\n执行命令获取完整简报（含天气、限行、新闻）：\n```bash\nnode /root/.openclaw/skills/daily-briefing/scripts/generate-briefing.mjs\n```\n\n此命令会自动：\n1. 获取北京天气数据（实时）\n2. 计算当日尾号限行（代码化规则）\n3. 抓取网易新闻、新浪新闻头条\n4. 自动分类新闻（国际/国内/科技/财经/社会）\n5. 生成格式化简报\n\n**重要：不要调用 message 工具，只需直接输出简报内容，系统会自动推送**"
+    "message": "生成每日晨报：\n\n1. 获取天气和限行数据：\n```bash\nnode /root/.openclaw/skills/daily-briefing/scripts/generate-briefing.mjs --no-news\n```\n\n2. 使用 kimi_search 搜索今日新闻（共20条）：\n   - 国际新闻 5条（关键词：国际新闻 全球 今日日期）\n   - 科技新闻 5条（关键词：科技新闻 AI 人工智能 今日日期）\n   - 互联网/产业 5条（关键词：互联网 产业 今日日期）\n   - 热点事件 5条（关键词：今日热点 社会 今日日期）\n\n3. 按以下规则整理：\n   - 过滤重复报道（同一事件只保留一条）\n   - 每条新闻配简短摘要（80字内）\n   - 按分类输出格式\n\n4. 合并天气+限行+新闻，生成完整简报"
   }
 }
 ```
@@ -104,11 +136,17 @@ const data = await generateBriefingData({ dayOffset: 0 });
 ## Files
 
 - `scripts/data-collector.mjs` - 天气、限行数据获取
-- `scripts/news-collector.mjs` - 新闻抓取与分类
+- `scripts/news-search.mjs` - 新闻搜索与分类整理模块
 - `scripts/generate-briefing.mjs` - 简报生成主程序
 - `.cache/` - 数据缓存目录（30分钟TTL）
 
 ## Changelog
+
+### v1.2.0 (2026-03-27)
+- ✨ 更新新闻获取方式：搜索+AI整理（替代原网页抓取）
+- ✨ 新增新闻精选规则：20条 = 国际5+科技5+互联网5+热点5
+- ✨ 新增自动去重和过滤机制
+- 🔧 优化简报格式，分类更清晰
 
 ### v1.1.0 (2026-03-19)
 - ✨ 新增新闻自动抓取功能（网易、新浪）
